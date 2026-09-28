@@ -246,45 +246,100 @@ end
 -- ── WEAPON CLASSIFIER ─────────────────────────────────────────────────────
 -- Reads the game's ItemLibrary Info table. The presence of AttackReach is the
 -- definition of "this is melee" — no gun ships one.
-local function meleeProfile(it)
+
+    if it == nil then return nillocal function meleeProfile(it)
     if it == nil then return nil end
     local info = nil
     pcall(function() info = it.Info end)
+    if type(info) ~= "table" then info = it end
     if type(info) ~= "table" then return nil end
-    if info.MaxAmmo ~= nil then return nil end
-    if type(info.AttackReach) ~= "number" then return nil end
+
+    local itemName = ""
+    pcall(function() itemName = tostring(it.Name or "") end)
+    local lowerName = string.lower(itemName)
+
+    local explicitMelee = false
+    pcall(function()
+        local t = info.Type or info.Class or info.ItemType or info.Category
+        if type(t) == "string" and string.lower(t) == "melee" then
+            explicitMelee = true
+        end
+    end)
+
+    local MELEE_FIELDS = {
+        "AttackReach", "HeavyAttackReach", "CriticalDamage",
+        "SpinRadius", "SpinDamage", "SpinCooldown",
+        "SawDamage", "SawReach", "SawTick", "SawRange", "SawCooldown",
+        "ChainsawDamage", "ChainsawReach", "ChainsawRange", "ChainsawSpeed",
+        "DeflectDuration", "MeleeDamage", "MeleeReach", "SwingDamage",
+        "SwingReach", "SwingCooldown", "SlashDamage", "SlashReach",
+        "M1Damage", "M1Reach", "PrimaryDamage", "PrimaryReach",
+        "LungeReach", "LungeDamage",
+    }
+    local hasMeleeField = false
+    for _, key in ipairs(MELEE_FIELDS) do
+        if type(info[key]) == "number" then hasMeleeField = true break end
+    end
+
+    local nameMelee = false
+    for _, kw in ipairs({
+        "chainsaw", "saw", "maul", "hammer", "axe", "knife",
+        "dagger", "sword", "katana", "saber", "machete", "karambit",
+        "balisong", "bat", "shovel", "pickaxe", "sledge", "cleaver",
+        "spear", "halberd", "glaive", "kunai", "shuriken", "scythe",
+        "flail", "whip", "club", "staff", "trident", "rapier", "kukri",
+        "kama", "nunchaku", "tonfa", "brass", "cudgel", "blade",
+    }) do
+        if string.find(lowerName, kw, 1, true) then nameMelee = true break end
+    end
+
+    if not (explicitMelee or hasMeleeField or nameMelee) then
+        return nil
+    end
+
     local cls = "swing"
-    if type(info.DeflectDuration) == "number" then
+    if string.find(lowerName, "chainsaw", 1, true) then
+        cls = "saw"
+    elseif type(info.DeflectDuration) == "number" then
         cls = "deflect"
     elseif type(info.CriticalDamage) == "number"
         and type(info.HeavyAttackCooldown) == "number" then
         cls = "heavy"
-    elseif type(info.SpinCooldown) == "number" then
+    elseif type(info.SpinCooldown) == "number"
+        or type(info.SpinDamage) == "number" then
         cls = "spin"
     elseif type(info.SawDamage) == "number"
         or type(info.SawReach) == "number"
         or type(info.SawTick) == "number"
-        or type(info.ChainsawDamage) == "number" then
+        or type(info.SawRange) == "number"
+        or type(info.ChainsawDamage) == "number"
+        or type(info.ChainsawReach) == "number"
+        or string.find(lowerName, "saw", 1, true) then
         cls = "saw"
-    elseif type(info.AttackDamage) == "number"
-        and type(info.AttackCooldown) == "number"
-        and (info.AttackCooldown or 0) <= 0.4 then
-        cls = "fists"
+    elseif string.find(lowerName, "knife", 1, true)
+        or string.find(lowerName, "dagger", 1, true)
+        or string.find(lowerName, "karambit", 1, true)
+        or string.find(lowerName, "balisong", 1, true) then
+        cls = "heavy"
+    elseif string.find(lowerName, "axe", 1, true) then
+        cls = "spin"
     else
         cls = "swing"
     end
+
     return {
         class      = cls,
         heavy      = (cls == "heavy"),
         spin       = (cls == "spin"),
         saw        = (cls == "saw"),
         deflect    = (cls == "deflect"),
-        reach      = info.AttackReach,
+        reach      = info.AttackReach or info.SawReach or info.HeavyAttackReach
+                     or info.MeleeReach or info.SwingReach or info.SlashReach,
         heavyReach = info.HeavyAttackReach,
-        cooldown   = info.HeavyAttackCooldown or info.SpinCooldown or info.AttackCooldown or 0,
+        cooldown   = info.HeavyAttackCooldown or info.SpinCooldown
+                     or info.AttackCooldown or info.SwingCooldown or 0,
     }
 end
-
 -- ── CROSS-SCRIPT SYNC ADAPTER ─────────────────────────────────────────────
 -- Talks to LuaHook's 03b_melee_sync module. Falls back to the meowland-style
 -- bare global if LuaHook is not present.
